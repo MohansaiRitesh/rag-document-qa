@@ -1,0 +1,56 @@
+# # Core Framework
+# fastapi>=0.104.0
+# uvicorn[standard]>=0.24.0
+# streamlit>=1.28.0
+
+# # Document Processing
+# pypdf2>=3.0.0
+# python-docx>=1.1.0
+# python-multipart>=0.0.6
+
+# # RAG Components - Using more flexible versions
+# langchain>=0.1.0
+# langchain-community>=0.0.10
+# chromadb>=0.4.0
+# sentence-transformers>=2.2.0
+
+# # LLM Integration
+# groq>=0.4.0
+# openai>=1.6.0
+
+# # Utilities
+# python-dotenv>=1.0.0
+# pydantic>=1.10.0,<2.0.0  # v1 to avoid Rust compilation
+# pydantic-settings>=2.0.0
+# requests>=2.31.0
+
+# # Core dependencies - Let pip resolve compatible versions
+# numpy>=1.24.0
+# torch>=2.0.0  # Required by sentence-transformers
+# transformers>=4.30.0  # Required by sentence-transformers
+
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+streamlit==1.32.0
+
+pypdf2==3.0.1
+python-docx==1.1.0
+python-multipart==0.0.9
+
+langchain==0.1.16
+langchain-community==0.0.34
+chromadb==0.4.24
+sentence-transformers==2.6.1
+
+groq==0.4.2
+openai==1.14.3
+
+python-dotenv==1.0.1
+pydantic==2.6.4
+pydantic-settings==2.2.1
+
+requests==2.31.0
+numpy==1.26.4
+
+torch==2.2.2
+transformers==4.38.2
