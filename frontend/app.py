@@ -7,7 +7,6 @@ This creates an interactive web interface for:
 3. Viewing answers with sources
 4. Managing the system
 
-Run with: streamlit run app.py
 """
 
 import streamlit as st
@@ -17,9 +16,8 @@ import json
 from pathlib import Path
 
 
-# ============================================
+
 # CONFIGURATION
-# ============================================
 
 # Backend API URL
 API_URL = "http://localhost:8000"
@@ -33,9 +31,7 @@ st.set_page_config(
 )
 
 
-# ============================================
 # HELPER FUNCTIONS
-# ============================================
 
 def check_backend_health() -> bool:
     """Check if backend is running"""
@@ -421,9 +417,6 @@ def main():
         st.info("💡 **Tip:** After uploading, go to the 'Ask Questions' tab to query your documents!")
 
 
-# ============================================
-# RUN APP
-# ============================================
 
 if __name__ == "__main__":
     main()
