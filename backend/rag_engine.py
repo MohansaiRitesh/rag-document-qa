@@ -30,7 +30,7 @@ class RAGEngine:
         """
         self.settings = get_settings()
         
-        print("🚀 Initializing RAG Engine...")
+        print("[INFO] Initializing RAG Engine...")
         
         # Initialize components
         self.document_processor = DocumentProcessor(
@@ -49,7 +49,7 @@ class RAGEngine:
             model=self.settings.llm_model
         )
         
-        print("✅ RAG Engine ready!")
+        print("[INFO] RAG Engine ready!")
     
     def upload_document(self, file_path: str, original_filename: str = None) -> Dict:
         """
@@ -67,7 +67,7 @@ class RAGEngine:
         """
         try:
             print(f"\n{'='*50}")
-            print(f"📄 Processing document: {original_filename or file_path}")
+            print(f"[INFO] Processing document: {original_filename or file_path}")
             print(f"{'='*50}")
             
             # Step 1: Process document (load + chunk)
@@ -94,7 +94,7 @@ class RAGEngine:
             }
             
         except Exception as e:
-            print(f"❌ Error processing document: {str(e)}")
+            print(f"[ERROR] Error processing document: {str(e)}")
             return {
                 "success": False,
                 "message": f"Error: {str(e)}"
@@ -115,11 +115,11 @@ class RAGEngine:
         """
         try:
             print(f"\n{'='*50}")
-            print(f"❓ Question: {question}")
+            print(f"[INFO] Question: {question}")
             print(f"{'='*50}")
             
             # Step 1: Retrieve relevant chunks
-            print(f"🔍 Searching for relevant chunks (top {self.settings.top_k_results})...")
+            print(f"[INFO] Searching for relevant chunks (top {self.settings.top_k_results})...")
             retrieved_chunks = self.vector_store.similarity_search(
                 query=question,
                 k=self.settings.top_k_results
@@ -133,10 +133,10 @@ class RAGEngine:
                     "question": question
                 }
             
-            print(f"✅ Found {len(retrieved_chunks)} relevant chunks")
+            print(f"[INFO] Found {len(retrieved_chunks)} relevant chunks")
             
             # Step 2: Generate response using LLM
-            print("🤖 Generating response...")
+            print("[INFO] Generating response...")
             result = self.llm_handler.generate_response(question, retrieved_chunks)
             
             return {
@@ -146,7 +146,7 @@ class RAGEngine:
             }
             
         except Exception as e:
-            print(f"❌ Error processing query: {str(e)}")
+            print(f"[ERROR] Error processing query: {str(e)}")
             return {
                 "success": False,
                 "message": f"Error: {str(e)}",
@@ -158,12 +158,24 @@ class RAGEngine:
         return self.vector_store.get_collection_stats()
     
     def clear_database(self) -> Dict:
-        """Clear all documents from the database"""
+        """Clear all documents from the database and uploads directory"""
         try:
+            # Clear vector store collection
             self.vector_store.clear_collection()
+            
+            # Clear files from uploads folder
+            upload_dir_path = Path(self.settings.upload_dir)
+            if upload_dir_path.exists():
+                for item in upload_dir_path.iterdir():
+                    if item.is_file():
+                        try:
+                            item.unlink()
+                        except Exception as file_err:
+                            print(f"[WARNING] Could not delete file {item.name}: {str(file_err)}")
+                            
             return {
                 "success": True,
-                "message": "Database cleared successfully"
+                "message": "Database and uploaded documents cleared successfully"
             }
         except Exception as e:
             return {

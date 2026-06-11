@@ -47,17 +47,17 @@ def test_env_file():
     print("Testing Environment Configuration...")
     print("="*50)
     
-    if not os.path.exists(".env"):
-        print("❌ .env file not found!")
+    if not os.path.exists("backend/.env"):
+        print("❌ backend/.env file not found!")
         print("   Create it by copying .env.example:")
-        print("   cp .env.example .env")
+        print("   cp .env.example backend/.env")
         return False
     
-    print("✅ .env file exists")
+    print("✅ backend/.env file exists")
     
     # Try to load env
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv("backend/.env")
     
     groq_key = os.getenv("GROQ_API_KEY")
     if not groq_key or groq_key == "your_groq_api_key_here":
@@ -79,9 +79,9 @@ def test_directories():
     dirs = [
         "backend",
         "frontend", 
-        "data",
-        "data/uploads",
-        "data/chromadb"
+        "backend/data",
+        "backend/data/uploads",
+        "backend/data/chromadb"
     ]
     
     all_good = True
@@ -130,7 +130,7 @@ def test_groq_connection():
         from groq import Groq
         from dotenv import load_dotenv
         
-        load_dotenv()
+        load_dotenv("backend/.env")
         api_key = os.getenv("GROQ_API_KEY")
         
         if not api_key or api_key == "your_groq_api_key_here":

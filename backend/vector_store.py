@@ -43,9 +43,9 @@ class VectorStore:
         self.collection_name = collection_name
         
         # Initialize embedding model
-        print(f"🔄 Loading embedding model: {embedding_model}")
+        print(f"[INFO] Loading embedding model: {embedding_model}")
         self.embedding_model = SentenceTransformer(embedding_model)
-        print("✅ Embedding model loaded")
+        print("[INFO] Embedding model loaded")
         
         # Initialize ChromaDB client with persistence
         self.client = chromadb.PersistentClient(
@@ -56,13 +56,13 @@ class VectorStore:
             )
         )
         
-        # Get or create collection
+        # Get or create collection with Cosine distance metric
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
-            metadata={"description": "RAG document collection"}
+            metadata={"hnsw:space": "cosine", "description": "RAG document collection"}
         )
         
-        print(f"✅ Vector store initialized with {self.collection.count()} existing documents")
+        print(f"[INFO] Vector store initialized with {self.collection.count()} existing documents")
     
     def create_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
@@ -89,7 +89,7 @@ class VectorStore:
             documents: List of LangchainDocument objects
         """
         if not documents:
-            print("⚠️ No documents to add")
+            print("[WARNING] No documents to add")
             return
         
         # Extract texts and metadata
@@ -100,7 +100,7 @@ class VectorStore:
         ids = [str(uuid.uuid4()) for _ in documents]
         
         # Create embeddings
-        print(f"🔄 Creating embeddings for {len(texts)} chunks...")
+        print(f"[INFO] Creating embeddings for {len(texts)} chunks...")
         embeddings = self.create_embeddings(texts)
         
         # Add to ChromaDB
@@ -111,7 +111,7 @@ class VectorStore:
             ids=ids
         )
         
-        print(f"✅ Added {len(documents)} chunks to vector store")
+        print(f"[SUCCESS] Added {len(documents)} chunks to vector store")
     
     def similarity_search(
         self, 
@@ -151,7 +151,7 @@ class VectorStore:
     def delete_collection(self) -> None:
         """Delete the entire collection"""
         self.client.delete_collection(name=self.collection_name)
-        print(f"✅ Deleted collection: {self.collection_name}")
+        print(f"[SUCCESS] Deleted collection: {self.collection_name}")
     
     def get_collection_stats(self) -> Dict:
         """Get statistics about the collection"""
@@ -168,9 +168,9 @@ class VectorStore:
         self.client.delete_collection(name=self.collection_name)
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,
-            metadata={"description": "RAG document collection"}
+            metadata={"hnsw:space": "cosine", "description": "RAG document collection"}
         )
-        print("✅ Collection cleared")
+        print("[SUCCESS] Collection cleared")
 
 
 # Example usage (for testing)

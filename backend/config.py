@@ -16,6 +16,10 @@ except ImportError:
 
 from functools import lru_cache
 import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+
 
 
 class Settings(BaseSettings):
@@ -37,11 +41,11 @@ class Settings(BaseSettings):
     top_k_results: int = 4  # Number of relevant chunks to retrieve
     
     # Vector Database
-    vector_db_path: str = "./data/chromadb"
+    vector_db_path: str = str(BASE_DIR / "data" / "chromadb")
     collection_name: str = "documents"
     
     # File Upload
-    upload_dir: str = "./data/uploads"
+    upload_dir: str = str(BASE_DIR / "data" / "uploads")
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     allowed_extensions: set = {".pdf", ".docx", ".txt"}
     
@@ -69,4 +73,4 @@ def setup_directories():
     settings = get_settings()
     os.makedirs(settings.upload_dir, exist_ok=True)
     os.makedirs(settings.vector_db_path, exist_ok=True)
-    print("✅ Directories initialized")
+    print("[INFO] Directories initialized")

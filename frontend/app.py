@@ -310,16 +310,16 @@ def main():
                     st.markdown("### 💡 Answer")
                     answer_html = f'''
                     <div style="
-                        background-color: #ffffff;
-                        border: 1px solid #e2e8f0;
-                        border-left: 4px solid #3b82f6;
+                        background-color: #1e293b;
+                        border: 1px solid #334155;
+                        border-left: 4px solid #10a37f;
                         padding: 1.5rem;
                         border-radius: 0.75rem;
                         margin: 1rem 0;
-                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
                     ">
                         <div style="
-                            color: #1e293b;
+                            color: #f8fafc;
                             font-size: 1.05rem;
                             line-height: 1.8;
                         ">
@@ -347,16 +347,16 @@ def main():
                                 
                                 preview_html = f'''
                                 <div style="
-                                    background-color: #f8fafc;
+                                    background-color: #0f172a;
                                     padding: 1rem;
                                     border-radius: 0.5rem;
                                     border-left: 4px solid {color};
-                                    color: #1e293b;
+                                    color: #cbd5e1;
                                     font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
                                     font-size: 0.875rem;
                                     line-height: 1.6;
                                     white-space: pre-wrap;
-                                    border: 1px solid #e2e8f0;
+                                    border: 1px solid #1e293b;
                                 ">
 {source.get('preview', '')}
                                 </div>

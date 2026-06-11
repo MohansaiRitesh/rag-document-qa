@@ -15,7 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict
-import shutil
 from pathlib import Path
 import uvicorn
 
@@ -33,7 +32,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Have to Specify your frontend URL in production
+    allow_origins=["*"],  # Specify frontend URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,7 +53,7 @@ async def startup_event():
     global rag_engine
     
     print("\n" + "="*50)
-    print("🚀 Starting RAG System")
+    print("[INFO] Starting RAG System")
     print("="*50)
     
     # Setup directories
@@ -63,8 +62,8 @@ async def startup_event():
     # Initialize RAG engine
     rag_engine = RAGEngine()
     
-    print("\n✅ System ready!")
-    print(f"📚 API Docs: http://{settings.api_host}:{settings.api_port}/docs")
+    print("\n[INFO] System ready!")
+    print(f"[INFO] API Docs: http://{settings.api_host}:{settings.api_port}/docs")
     print("="*50 + "\n")
 
 
@@ -263,10 +262,6 @@ async def list_documents():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ============================================
-# RUN SERVER
-# ============================================
 
 if __name__ == "__main__":
     """

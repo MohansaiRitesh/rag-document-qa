@@ -43,7 +43,7 @@ class LLMHandler:
         self.model = model
         self.temperature = temperature
         
-        print(f"✅ LLM Handler initialized with model: {model}")
+        print(f"[INFO] LLM Handler initialized with model: {model}")
     
     def create_system_prompt(self) -> str:
         """
@@ -147,7 +147,7 @@ Please provide a detailed answer based on the context above. Remember to cite yo
                 sources.append({
                     "source": metadata.get('source', 'Unknown'),
                     "chunk_id": metadata.get('chunk_id', 'N/A'),
-                    "relevance_score": round(1 - distance, 3),  # Convert distance to similarity
+                    "relevance_score": round(max(0.0, min(1.0, 1.0 - distance)), 3),  # Convert distance to similarity
                     "preview": text[:200] + "..." if len(text) > 200 else text
                 })
             
@@ -179,10 +179,10 @@ Please provide a detailed answer based on the context above. Remember to cite yo
                 messages=[{"role": "user", "content": "Hello"}],
                 max_tokens=10
             )
-            print("✅ LLM connection test successful")
+            print("[SUCCESS] LLM connection test successful")
             return True
         except Exception as e:
-            print(f"❌ LLM connection test failed: {str(e)}")
+            print(f"[ERROR] LLM connection test failed: {str(e)}")
             return False
 
 
