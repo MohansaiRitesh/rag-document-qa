@@ -118,9 +118,9 @@ class RAGEngine:
             print(f"[INFO] Question: {question}")
             print(f"{'='*50}")
             
-            # Step 1: Retrieve relevant chunks
-            print(f"[INFO] Searching for relevant chunks (top {self.settings.top_k_results})...")
-            retrieved_chunks = self.vector_store.similarity_search(
+            # Step 1: Retrieve relevant chunks using Hybrid Search (BM25 + Semantic)
+            print(f"[INFO] Searching for relevant chunks using Hybrid Search (top {self.settings.top_k_results})...")
+            retrieved_chunks = self.vector_store.hybrid_search(
                 query=question,
                 k=self.settings.top_k_results
             )

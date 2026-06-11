@@ -18,6 +18,7 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from langchain.schema import Document
 import uuid
+from bm25 import BM25
 
 
 class VectorStore:
@@ -63,6 +64,10 @@ class VectorStore:
         )
         
         print(f"[INFO] Vector store initialized with {self.collection.count()} existing documents")
+        
+        # Initialize BM25 and fit with existing documents
+        self.bm25 = BM25()
+        self._fit_bm25_from_db()
     
     def create_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
@@ -112,6 +117,9 @@ class VectorStore:
         )
         
         print(f"[SUCCESS] Added {len(documents)} chunks to vector store")
+        
+        # Refit BM25 index
+        self._fit_bm25_from_db()
     
     def similarity_search(
         self, 
@@ -147,6 +155,64 @@ class VectorStore:
                 formatted_results.append((text, metadata, distance))
         
         return formatted_results
+
+    def _fit_bm25_from_db(self) -> None:
+        """Fetch all documents from ChromaDB and fit the BM25 index"""
+        results = self.collection.get()
+        self.indexed_documents = results.get('documents', []) or []
+        self.indexed_metadatas = results.get('metadatas', []) or []
+        self.bm25.fit(self.indexed_documents)
+
+    def hybrid_search(
+        self, 
+        query: str, 
+        k: int = 4,
+        rrf_k: int = 60
+    ) -> List[Tuple[str, Dict, float]]:
+        """
+        Perform Hybrid Search combining Semantic (ChromaDB) and Lexical (BM25) search,
+        merging results using Reciprocal Rank Fusion (RRF).
+        """
+        # Step 1: Run semantic search (get a larger set of candidates, e.g. 20)
+        semantic_candidates = self.similarity_search(query, k=20)
+        
+        # Step 2: Run lexical search (get a larger set of candidates, e.g. 20)
+        lexical_results = self.bm25.search(query, top_n=20)
+        
+        # Step 3: Perform Reciprocal Rank Fusion
+        # A unique identifier is required for each chunk. (source, chunk_id) is perfect.
+        def get_chunk_key(metadata: Dict) -> Tuple[str, int]:
+            return (metadata.get('source', 'Unknown'), metadata.get('chunk_id', -1))
+            
+        rrf_scores: Dict[Tuple[str, int], float] = {}
+        chunk_lookup: Dict[Tuple[str, int], Tuple[str, Dict, float]] = {}
+        
+        # Track ranks in semantic search
+        for rank, (text, metadata, distance) in enumerate(semantic_candidates, 1):
+            key = get_chunk_key(metadata)
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
+            chunk_lookup[key] = (text, metadata, distance)
+            
+        # Track ranks in lexical search
+        for rank, (doc_idx, bm25_score) in enumerate(lexical_results, 1):
+            text = self.indexed_documents[doc_idx]
+            metadata = self.indexed_metadatas[doc_idx]
+            key = get_chunk_key(metadata)
+            
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
+            
+            # If the chunk is not in lookup, add it with a default distance of 0.5 (50% similarity)
+            if key not in chunk_lookup:
+                chunk_lookup[key] = (text, metadata, 0.5)
+                
+        # Step 4: Sort chunks by RRF score descending
+        sorted_keys = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
+        
+        # Step 5: Take top K results
+        top_keys = sorted_keys[:k]
+        
+        results = [chunk_lookup[key] for key in top_keys]
+        return results
     
     def delete_collection(self) -> None:
         """Delete the entire collection"""
@@ -171,6 +237,9 @@ class VectorStore:
             metadata={"hnsw:space": "cosine", "description": "RAG document collection"}
         )
         print("[SUCCESS] Collection cleared")
+        
+        # Refit BM25 index (will be empty)
+        self._fit_bm25_from_db()
 
 
 # Example usage (for testing)
