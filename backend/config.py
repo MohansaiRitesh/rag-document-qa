@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200  # Overlap between chunks for context
     top_k_results: int = 4  # Number of relevant chunks to retrieve
     
+    # Re-ranking Parameters
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    rerank_top_n: int = 15  # Candidate chunks to retrieve before re-ranking
+    
     # Vector Database
     vector_db_path: str = str(BASE_DIR / "data" / "chromadb")
     collection_name: str = "documents"

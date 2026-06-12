@@ -63,12 +63,15 @@ def upload_document(file) -> Dict:
         return {"success": False, "message": str(e)}
 
 
-def query_documents(question: str) -> Dict:
+def query_documents(question: str, history: List[Dict] = None) -> Dict:
     """Ask a question"""
     try:
         response = requests.post(
             f"{API_URL}/query",
-            json={"question": question}
+            json={
+                "question": question,
+                "history": history or []
+            }
         )
         return response.json()
     except Exception as e:
@@ -257,10 +260,17 @@ def main():
             with st.spinner("Clearing..."):
                 result = clear_database()
                 if result.get("success"):
+                    st.session_state.messages = []
                     st.success("✅ Database cleared!")
                     st.rerun()
                 else:
                     st.error(f"❌ {result.get('message')}")
+        
+        # Clear chat history button
+        if st.button("💬 Clear Chat History", use_container_width=True):
+            st.session_state.messages = []
+            st.success("✅ Chat history cleared!")
+            st.rerun()
         
         st.markdown("---")
         
@@ -290,60 +300,73 @@ def main():
         else:
             st.success(f"✅ {stats.get('total_documents', 0)} document chunks available")
         
-        # Question input
-        question = st.text_input(
-            "**Your Question:**",
-            placeholder="What is this document about?",
-            label_visibility="visible"
-        )
-        
-        # Ask button
-        if st.button("🔍 Get Answer", type="primary", use_container_width=True):
-            if not question.strip():
-                st.warning("⚠️ Please enter a question!")
-            else:
-                with st.spinner("🤔 Searching documents and generating answer..."):
-                    result = query_documents(question)
+        # Initialize session state chat messages
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
+            
+        # Display chat messages from history on app rerun
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
                 
-                if result.get("success"):
-                    # Display answer
-                    st.markdown("### 💡 Answer")
-                    answer_html = f'''
-                    <div style="
-                        background-color: #1e293b;
-                        border: 1px solid #334155;
-                        border-left: 4px solid #10a37f;
-                        padding: 1.5rem;
-                        border-radius: 0.75rem;
-                        margin: 1rem 0;
-                        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-                    ">
-                        <div style="
-                            color: #f8fafc;
-                            font-size: 1.05rem;
-                            line-height: 1.8;
-                        ">
-                            {result.get("answer", "")}
-                        </div>
-                    </div>
-                    '''
-                    st.markdown(answer_html, unsafe_allow_html=True)
-                    
-                    # Display sources
-                    sources = result.get("sources", [])
-                    if sources:
-                        st.markdown("### 📑 Sources")
-                        for i, source in enumerate(sources, 1):
+                # Check if there are saved sources for this message
+                if "sources" in message and message["sources"]:
+                    with st.expander("📑 Sources used for this answer"):
+                        for i, source in enumerate(message["sources"], 1):
                             relevance = source.get('relevance_score', 0)
                             color = "#10b981" if relevance > 0.8 else "#f59e0b" if relevance > 0.6 else "#ef4444"
+                            st.markdown(f"**Source {i}:** {source.get('source', 'Unknown')} (Relevance: {relevance:.1%})")
+                            st.markdown(f"**Chunk:** {source.get('chunk_id', 'N/A')}")
                             
-                            with st.expander(
-                                f"**Source {i}:** {source.get('source', 'Unknown')} "
-                                f"(Relevance: {relevance:.1%})",
-                                expanded=(i == 1)
-                            ):
+                            preview_html = f'''
+                            <div style="
+                                background-color: #0f172a;
+                                padding: 1rem;
+                                border-radius: 0.5rem;
+                                border-left: 4px solid {color};
+                                color: #cbd5e1;
+                                font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+                                font-size: 0.875rem;
+                                line-height: 1.6;
+                                white-space: pre-wrap;
+                                border: 1px solid #1e293b;
+                            ">
+{source.get('preview', '')}
+                            </div>
+                            '''
+                            st.markdown(preview_html, unsafe_allow_html=True)
+                            st.markdown("---")
+        
+        # React to user input
+        if prompt := st.chat_input("Ask a question about your documents..."):
+            # Display user message in chat message container
+            with st.chat_message("user"):
+                st.markdown(prompt)
+                
+            # Add user message to chat history
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            
+            # Send query to backend
+            with st.spinner("🤔 Thinking..."):
+                # Pass previous messages (excluding the current prompt we just appended)
+                history_payload = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[:-1]]
+                result = query_documents(prompt, history_payload)
+                
+            if result.get("success"):
+                answer = result.get("answer", "")
+                sources = result.get("sources", [])
+                
+                # Display assistant response in chat message container
+                with st.chat_message("assistant"):
+                    st.markdown(answer)
+                    
+                    if sources:
+                        with st.expander("📑 Sources used for this answer", expanded=True):
+                            for i, source in enumerate(sources, 1):
+                                relevance = source.get('relevance_score', 0)
+                                color = "#10b981" if relevance > 0.8 else "#f59e0b" if relevance > 0.6 else "#ef4444"
+                                st.markdown(f"**Source {i}:** {source.get('source', 'Unknown')} (Relevance: {relevance:.1%})")
                                 st.markdown(f"**Chunk:** {source.get('chunk_id', 'N/A')}")
-                                st.markdown("**Preview:**")
                                 
                                 preview_html = f'''
                                 <div style="
@@ -362,12 +385,17 @@ def main():
                                 </div>
                                 '''
                                 st.markdown(preview_html, unsafe_allow_html=True)
-                    
-                    # Model info
-                    if result.get("model"):
-                        st.caption(f"🤖 Powered by: {result.get('model')}")
-                else:
-                    st.error(f"❌ Error: {result.get('message', 'Unknown error')}")
+                                st.markdown("---")
+                                
+                # Add assistant response with sources to chat history
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": answer,
+                    "sources": sources
+                })
+                st.rerun()
+            else:
+                st.error(f"❌ Error: {result.get('message', 'Unknown error')}")
     
     # ============================================
     # TAB 2: UPLOAD DOCUMENTS

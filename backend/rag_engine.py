@@ -16,6 +16,7 @@ import shutil
 from document_processor import DocumentProcessor
 from vector_store import VectorStore
 from llm_handler import LLMHandler
+from reranker import Reranker
 from config import get_settings
 
 
@@ -47,6 +48,10 @@ class RAGEngine:
         self.llm_handler = LLMHandler(
             api_key=self.settings.groq_api_key,
             model=self.settings.llm_model
+        )
+        
+        self.reranker = Reranker(
+            model_name=self.settings.reranker_model
         )
         
         print("[INFO] RAG Engine ready!")
@@ -100,15 +105,16 @@ class RAGEngine:
                 "message": f"Error: {str(e)}"
             }
     
-    def query(self, question: str) -> Dict:
+    def query(self, question: str, history: List[Dict[str, str]] = None) -> Dict:
         """
-        Answer a question using RAG
+        Answer a question using RAG and conversation history
         
         This is the QUERY phase:
-        Question → Retrieve → Generate → Answer
+        Question + History → Condense → Retrieve → Generate → Answer
         
         Args:
             question: User's question
+            history: List of previous chat messages
             
         Returns:
             Dictionary with answer and metadata
@@ -118,14 +124,17 @@ class RAGEngine:
             print(f"[INFO] Question: {question}")
             print(f"{'='*50}")
             
-            # Step 1: Retrieve relevant chunks using Hybrid Search (BM25 + Semantic)
-            print(f"[INFO] Searching for relevant chunks using Hybrid Search (top {self.settings.top_k_results})...")
-            retrieved_chunks = self.vector_store.hybrid_search(
-                query=question,
-                k=self.settings.top_k_results
+            # Step 1: Condense the query if there is conversation history
+            condensed_query = self.llm_handler.condense_query(question, history)
+            
+            # Stage 1 Retrieval: Retrieve candidate chunks using Hybrid Search (BM25 + Semantic)
+            print(f"[INFO] Stage 1 Retrieval: Fetching top {self.settings.rerank_top_n} candidates...")
+            candidate_chunks = self.vector_store.hybrid_search(
+                query=condensed_query,
+                k=self.settings.rerank_top_n
             )
             
-            if not retrieved_chunks:
+            if not candidate_chunks:
                 return {
                     "success": True,
                     "answer": "No relevant information found in the uploaded documents.",
@@ -133,11 +142,22 @@ class RAGEngine:
                     "question": question
                 }
             
-            print(f"[INFO] Found {len(retrieved_chunks)} relevant chunks")
+            # Stage 2 Re-ranking: Re-score and sort candidates using Cross-Encoder
+            retrieved_chunks = self.reranker.rerank(
+                query=condensed_query,
+                chunks=candidate_chunks,
+                top_k=self.settings.top_k_results
+            )
             
-            # Step 2: Generate response using LLM
+            print(f"[INFO] Stage 2 Re-ranking: Selected top {len(retrieved_chunks)} chunks")
+            
+            # Step 2: Generate response using LLM (passing original query and history)
             print("[INFO] Generating response...")
-            result = self.llm_handler.generate_response(question, retrieved_chunks)
+            result = self.llm_handler.generate_response(
+                query=question, 
+                retrieved_chunks=retrieved_chunks,
+                history=history
+            )
             
             return {
                 "success": True,
