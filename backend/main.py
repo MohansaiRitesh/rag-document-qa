@@ -68,14 +68,24 @@ async def startup_event():
 
 
 # Pydantic models for request/response
+class Message(BaseModel):
+    """Model for a single message in the conversation history"""
+    role: str  # "user" or "assistant"
+    content: str
+
 class QueryRequest(BaseModel):
-    """Model for question queries"""
+    """Model for question queries with history"""
     question: str
+    history: Optional[List[Message]] = []
     
     class Config:
         json_schema_extra = {
             "example": {
-                "question": "What is the main topic of the document?"
+                "question": "What is the main topic of the document?",
+                "history": [
+                    {"role": "user", "content": "Who founded TechVision?"},
+                    {"role": "assistant", "content": "TechVision was founded by Dr. Sarah Chen and Michael Rodriguez."}
+                ]
             }
         }
 
@@ -207,8 +217,9 @@ async def query_documents(request: QueryRequest):
         if not request.question or not request.question.strip():
             raise HTTPException(status_code=400, detail="Question cannot be empty")
         
-        # Process query
-        result = rag_engine.query(request.question)
+        # Process query with history
+        history_list = [msg.model_dump() for msg in request.history] if request.history else []
+        result = rag_engine.query(request.question, history_list)
         
         return result
         

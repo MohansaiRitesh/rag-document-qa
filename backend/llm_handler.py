@@ -90,18 +90,66 @@ Remember: Your goal is to provide GROUNDED, CITED answers without hallucination.
             context_parts.append(context_part)
         
         return "\n".join(context_parts)
+        
+    def condense_query(self, query: str, history: List[Dict[str, str]] = None) -> str:
+        """
+        Condense a follow-up query and history into a standalone search query.
+        """
+        if not history:
+            return query
+            
+        # Format chat history
+        history_parts = []
+        for msg in history:
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            history_parts.append(f"{role}: {msg.get('content')}")
+        history_text = "\n".join(history_parts)
+        
+        system_prompt = (
+            "You are a helpful assistant that reformulates user follow-up questions "
+            "and conversation history into a single, standalone search query. "
+            "Do NOT answer the question, just return the search query and nothing else. "
+            "Make it concise and suitable for a vector database search."
+        )
+        
+        user_message = f"""Given the following conversation history and a follow-up question, rephrase the follow-up question to be a standalone search query. Do NOT answer the question, just output the rephrased query and nothing else.
+
+Conversation History:
+{history_text}
+
+Follow-up Question: {query}
+Standalone Search Query:"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.0,  # Highly deterministic
+                max_tokens=256
+            )
+            condensed = response.choices[0].message.content.strip()
+            print(f"[INFO] Condensed Query: '{query}' -> '{condensed}'")
+            return condensed
+        except Exception as e:
+            print(f"[WARNING] Query condensation failed: {str(e)}. Using original query.")
+            return query
     
     def generate_response(
         self,
         query: str,
-        retrieved_chunks: List[Tuple[str, Dict, float]]
+        retrieved_chunks: List[Tuple[str, Dict, float]],
+        history: List[Dict[str, str]] = None
     ) -> Dict:
         """
-        Generate response using retrieved context
+        Generate response using retrieved context and conversation history
         
         Args:
             query: User's question
             retrieved_chunks: Retrieved document chunks
+            history: Optional conversation history
             
         Returns:
             Dictionary with answer and metadata
@@ -116,7 +164,7 @@ Remember: Your goal is to provide GROUNDED, CITED answers without hallucination.
         # Format context
         context = self.format_context(retrieved_chunks)
         
-        # Create user message with context
+        # Create user message with context (sent as the final user message)
         user_message = f"""Context Information:
 {context}
 
@@ -125,13 +173,23 @@ Question: {query}
 Please provide a detailed answer based on the context above. Remember to cite your sources."""
         
         try:
+            # Construct chat messages array
+            messages = [{"role": "system", "content": self.create_system_prompt()}]
+            
+            # Append history if available
+            if history:
+                for msg in history:
+                    role = msg.get("role")
+                    if role in ["user", "assistant"]:
+                        messages.append({"role": role, "content": msg.get("content")})
+                        
+            # Append the current query with context
+            messages.append({"role": "user", "content": user_message})
+            
             # Call Groq API
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": self.create_system_prompt()},
-                    {"role": "user", "content": user_message}
-                ],
+                messages=messages,
                 temperature=self.temperature,
                 max_tokens=1024,
                 top_p=1,
