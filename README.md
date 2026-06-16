@@ -1,241 +1,206 @@
-# 📚 RAG Document Q&A System
+# 📚 Grounded RAG Document Q&A System
 
-A production-ready Retrieval-Augmented Generation (RAG) system for document question-answering with cited, grounded answers. Built with FastAPI, Streamlit, and Groq's lightning-fast LLM API.
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.8+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/FastAPI-0.110-green.svg?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/Streamlit-1.32-red.svg?style=for-the-badge&logo=streamlit&logoColor=white" alt="Streamlit" />
+  <img src="https://img.shields.io/badge/Groq_Llama_3.3-70B-orange.svg?style=for-the-badge&logo=groq&logoColor=white" alt="Groq" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="License" />
+</p>
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+A production-grade, high-performance **Retrieval-Augmented Generation (RAG)** pipeline designed for grounded, verifiable question-answering over private documents. Connect your files (PDF, DOCX, TXT) and receive context-restricted answers with precise citations, powered by dense-lexical hybrid search, cross-encoder re-ranking, and low-latency token streaming.
 
-## 🌟 Features
+---
 
-- **Multi-format Support**: PDF, DOCX, TXT files
-- **Intelligent Chunking**: Context-aware document splitting
-- **Semantic Search**: Find relevant information using embeddings
-- **Grounded Answers**: LLM responses based only on your documents
-- **Source Citations**: Every answer includes source references
-- **Fast & Free**: Uses Groq's lightning-fast LLM API (free tier available)
-- **Persistent Storage**: ChromaDB vector database saves your documents
-- **Modern UI**: Clean, professional Streamlit interface
+## 🌟 Key Capabilities
 
-## 🎥 Demo
+Most RAG repositories demonstrate a basic split-embed-query loop. This system implements production-tier methodologies to handle real-world challenges like referential ambiguity, embedding dilution, and context attention loss:
 
-![RAG System Demo](demo.gif)
+| Dimension | Basic RAG | This Production-Grade Pipeline |
+|---|---|---|
+| **Chunking** | Fixed-size splits only | **Multi-Strategy**: Recursive, Semantic (z-score spikes), or Hierarchical (Parent-Child) |
+| **Retrieval** | Single vector search | **Hybrid Search**: Dense Semantic (MiniLM) + Lexical (Custom BM25) fused via RRF |
+| **Re-ranking** | First-pass results | **2-Stage Retrieval**: Stage 1 candidate pool (15) $\rightarrow$ Stage 2 Cross-Encoder reranking (4) |
+| **LLM Focus** | Raw ordered contexts | **Lost-in-the-Middle (LitM)**: Alternates chunk relevance to prompt borders |
+| **Recall Boost** | Query vector similarity | **HyDE**: Generates hypothetical answer paragraph to search, bridging semantic gaps |
+| **Response Latency** | Blocking full JSON | **Real-Time Token Streaming**: Server-Sent Events (SSE) yielding tokens at ~750 tok/s |
+| **Conversations** | Single-turn Q&A | **Multi-Turn Chat**: Self-contained query condensation using conversation history |
+| **Verification** | Unverifiable answers | **Metadata Filters & Grounded Citations**: Color-coded relevance scores + chunk source previews |
+| **UI Responsiveness** | Sluggish blocking calls | **Lag-Free UI**: Caches stats, metadata, and backend health checks in Streamlit session state |
 
-## 🏗️ Architecture
+---
+
+## 🏗️ System Architecture & Data Flow
 
 ```
-┌─────────────┐
-│  Streamlit  │  Frontend (User Interface)
-│   Frontend  │
-└──────┬──────┘
-       │ HTTP Requests
-       ▼
-┌─────────────┐
-│   FastAPI   │  Backend (REST API)
-│   Backend   │
-└──────┬──────┘
-       │
-       ├─────────────┐
-       │             │
-       ▼             ▼
-┌─────────────┐  ┌──────────────┐
-│  RAG Engine │  │  Vector DB   │
-│             │  │  (ChromaDB)  │
-└─────────────┘  └──────────────┘
-       │
-       ▼
-┌──────────────┐
-│  Groq API    │
-│  (Llama 3.3) │
-└──────────────┘
+                               ┌──────────────────────────────┐
+                               │       Streamlit Frontend     │  ← Optimized state cache &
+                               │        (frontend/app.py)     │    Server-Sent Events reader
+                               └──────────────┬───────────────┘
+                                              │  HTTP REST / query-stream (SSE)
+                                              ▼
+                               ┌──────────────────────────────┐
+                               │        FastAPI Backend       │  ← Schema validation & Cors
+                               │       (backend/main.py)      │    lifespan controllers
+                               └──────────────┬───────────────┘
+                                              │  Internal calls
+                                              ▼
+ ┌────────────────────────────────────────────────────────────────────────────────────────┐
+ │                                       RAG ENGINE                                       │
+ │                                 (backend/rag_engine.py)                                │
+ └──────┬──────────────────────┬───────────────────────┬──────────────────────────┬───────┘
+        │                      │                       │                          │
+        ▼                      ▼                       ▼                          ▼
+┌──────────────┐       ┌───────────────┐       ┌───────────────┐          ┌──────────────┐
+│  DocProcessor│       │  Vector Store │       │  LLM Handler  │          │   Reranker   │
+│ ──────────── │       │ ───────────── │       │ ───────────── │          │ ──────────── │
+│ Load file    │       │ ChromaDB      │       │ Groq API      │          │ Cross-Encoder│
+│ (pdf/docx/txt)       │ BM25 index    │       │ (Llama 3.3)   │          │ (ms-marco)   │
+│              │       │ Parent lookup │       │ Condensation  │          │ Sigmoid score│
+│ Split texts: │       │ (JSON database)       │ HyDE gen      │          │ normalizer   │
+│ - Recursive  │       │               │       │ LitM packing  │          │              │
+│ - Semantic   │       │               │       │ SSE stream    │          │              │
+│ - ParentChild│       │               │       │               │          │              │
+└──────────────┘       └───────────────┘       └───────────────┘          └──────────────┘
 ```
 
-## 🚀 Quick Start
+### 1. Document Indexing Pipeline (Upload)
+1. **File Loading**: Raw text is parsed from PDFs (with `[Page N]` citation markers), Word documents, or text files.
+2. **Chunking Tiers**:
+   - **Recursive**: Splits text by separator priority `["\n\n", "\n", ". ", " ", ""]`.
+   - **Semantic**: Segments text dynamically at sentence transitions where embedding distances spike.
+   - **Hierarchical**: Splits text into large parent chunks (1500 chars) and smaller child chunks (300 chars).
+3. **Storage Strategy**: Standard and semantic chunks are saved directly in ChromaDB. Hierarchical chunks save child vectors in ChromaDB, while registering their parent structures inside `data/parent_store.json`.
+4. **Lexical Synching**: Rebuilds the custom in-memory BM25 index over the entire corpus.
+
+### 2. Retrieval & Generation Pipeline (Query)
+1. **Condensation**: Rewrites follow-up questions into standalone queries using chat history.
+2. **HyDE Expansion** *(Optional)*: Synthesizes a hypothetical answer via Llama 3.3 to search vector space, bridging the semantic gap between questions and documents.
+3. **Stage 1 Search**: Retrieves top 20 candidates from BM25 and ChromaDB. Merges ranks using Reciprocal Rank Fusion (RRF, $k=60$). If hierarchical mode is active, child chunks are resolved to their parents via `parent_store.json` and deduplicated.
+4. **Stage 2 Reranking**: Re-scores the top 15 candidates using a ms-marco cross-encoder. Scores are normalized to $[0, 1]$ via Sigmoid.
+5. **LitM Packing** *(Optional)*: Re-orders the top 4 chunks (alternating high relevance to prompt edges) to bypass the transformer attention valley.
+6. **Token streaming**: Feeds context to Groq and streams text tokens back to the UI at ultra-low latency.
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
+- Python 3.8+
+- Groq API Key (Get a free key at [console.groq.com](https://console.groq.com))
 
-- Python 3.8 or higher
-- Groq API key (free at https://console.groq.com)
-
-### Installation
-
-1. **Clone the repository**
+### 1. Installation
+Clone the repository and install the dependencies:
 ```bash
-git clone https://github.com/YOUR_USERNAME/rag-document-qa.git
+git clone https://github.com/MohansaiRitesh/rag-document-qa.git
 cd rag-document-qa
-```
-
-2. **Install dependencies**
-```bash
 pip install -r requirements.txt
 ```
 
-3. **Configure API key**
+### 2. Configuration
+Create a `.env` file in the `backend/` directory:
 ```bash
-cp .env.example .env
-# Edit .env and add your Groq API key
+# File: backend/.env
+GROQ_API_KEY=gsk_your_actual_key_goes_here
 ```
 
-4. **Run the backend**
+### 3. Start the Backend API Server
 ```bash
 cd backend
 python main.py
 ```
+- API server will start at: `http://localhost:8000`
+- Interactive Swagger Documentation: `http://localhost:8000/docs`
 
-5. **Run the frontend** (in a new terminal)
+### 4. Start the Frontend UI (In a new terminal)
 ```bash
 cd frontend
 streamlit run app.py
 ```
-
-6. **Open your browser**
-Navigate to `http://localhost:8501`
-
-## 📖 Usage
-
-### Upload Documents
-1. Go to the "Upload Documents" tab
-2. Select a PDF, DOCX, or TXT file
-3. Click "Upload & Process"
-4. Wait for processing (creates ~40-50 chunks)
-
-### Ask Questions
-1. Go to the "Ask Questions" tab
-2. Type your question
-3. Click "Get Answer"
-4. View answer with source citations
-
-### Example
-```
-Upload: "company_policy.pdf"
-Question: "How many vacation days do employees get?"
-Answer: "Employees receive 15 days of paid vacation per year. 
-         (Source: company_policy.pdf, Relevance: 94%)"
-```
-
-## 🛠️ Technology Stack
-
-- **Backend**: FastAPI (REST API)
-- **Frontend**: Streamlit (Web UI)
-- **LLM**: Groq API (Llama 3.3 70B)
-- **Embeddings**: Sentence Transformers (MiniLM-L6)
-- **Vector DB**: ChromaDB (local storage)
-- **Document Processing**: PyPDF2, python-docx, LangChain
-
-## 📁 Project Structure
-
-```
-rag_project/
-├── backend/
-│   ├── main.py              # FastAPI server
-│   ├── rag_engine.py        # Main orchestrator
-│   ├── document_processor.py # Load & chunk documents
-│   ├── vector_store.py      # ChromaDB interface
-│   ├── llm_handler.py       # Groq LLM integration
-│   └── config.py            # Configuration
-├── frontend/
-│   └── app.py               # Streamlit UI
-├── test_documents/          # Sample documents & tests
-├── requirements.txt
-├── .env.example
-└── README.md
-```
-
-## ⚙️ Configuration
-
-Edit `backend/config.py` to customize:
-
-```python
-# Chunking
-chunk_size = 1000        # Characters per chunk
-chunk_overlap = 200      # Overlap for context
-
-# Retrieval
-top_k_results = 4        # Chunks to retrieve
-
-# Model
-llm_model = "llama-3.3-70b-versatile"
-embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
-```
-
-## 🧪 Testing
-
-We provide comprehensive test materials:
-
-```bash
-# Test the system
-cd test_documents
-# Upload techvision_employee_handbook.txt
-# Run questions from TEST_QUESTIONS.md
-```
-
-**Test Categories:**
-- ✅ Easy: Basic fact retrieval (5 questions)
-- 🟡 Medium: Multi-step reasoning (5 questions)
-- 🔴 Hard: Complex scenarios (5 questions)
-- 🚫 Negative: Hallucination prevention (3 questions)
-
-## 📊 Performance
-
-- **Embedding Creation**: ~100 chunks/second
-- **Vector Search**: <100ms for 1000 chunks
-- **LLM Response**: ~1-2 seconds (via Groq)
-- **Total Query Time**: ~2-3 seconds
-
-## 🔒 Security Notes
-
-**Current Setup** (Development):
-- No authentication
-- Local storage only
-- API key in `.env` file
-
-**For Production**:
-- Add API authentication
-- Use environment secrets management
-- Implement rate limiting
-- Enable HTTPS
-- Add input sanitization
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- **Groq** - Fast, free LLM API
-- **ChromaDB** - Simple vector database
-- **LangChain** - Document processing utilities
-- **Sentence Transformers** - Embedding models
-- **FastAPI** - Modern Python framework
-- **Streamlit** - Rapid UI development
-
-## 📧 Contact
-
-Your Name - [@your_twitter](https://twitter.com/your_twitter)
-
-Project Link: [https://github.com/YOUR_USERNAME/rag-document-qa](https://github.com/YOUR_USERNAME/rag-document-qa)
-
-## 🗺️ Roadmap
-
-- [ ] Add conversation history
-- [ ] Support more file formats (Excel, Markdown)
-- [ ] Implement streaming responses
-- [ ] Add user authentication
-- [ ] Multi-language support
-- [ ] Advanced filtering and search
-- [ ] Export Q&A to PDF
-- [ ] Docker deployment
+- Streamlit application will open automatically at: `http://localhost:8501`
 
 ---
 
-**Built with ❤️ for learning RAG systems**
+## ⚙️ Configuration Reference
+
+All settings can be configured in `backend/config.py` or overridden via environment variables in `backend/.env`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `GROQ_API_KEY` | (required) | API key for Llama 3.3 Groq access |
+| `llm_model` | `llama-3.3-70b-versatile` | Llama 3.3 70B model identifier |
+| `embedding_model` | `all-MiniLM-L6-v2` | Dense sentence-transformer model (384-dims) |
+| `reranker_model` | `ms-marco-MiniLM-L-6-v2` | Cross-Encoder model for Stage 2 re-ranking |
+| `chunking_strategy` | `recursive` | Default strategy: `"recursive"`, `"semantic"`, `"hierarchical"` |
+| `chunk_size` | `1000` | Target character size for standard chunks |
+| `chunk_overlap` | `200` | Overlapping characters between consecutive chunks |
+| `parent_chunk_size` | `1500` | Parent segment size (Hierarchical strategy) |
+| `child_chunk_size` | `300` | Child segment size (Hierarchical strategy) |
+| `use_hyde` | `True` | Generate hypothetical answers before search |
+| `use_litm_packing` | `True` | Pack context chunks to primacy/recency boundaries |
+| `top_k_results` | `4` | Number of context chunks fed to the LLM |
+| `rerank_top_n` | `15` | Size of Stage 1 candidate pool before reranking |
+
+---
+
+## 🧪 Verification & Testing
+
+The repository contains a self-contained system diagnostic and verification script `test_system.py`. You can run this script to ensure all Python dependencies are correctly installed, directory paths are active, and API integrations (e.g., Groq client validation) are operational:
+
+```bash
+python test_system.py
+```
+
+---
+
+## 🔌 REST API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Check backend components status (LLM connection, ChromaDB) |
+| `GET` | `/stats` | Retrieve total chunk count indexed in database |
+| `GET` | `/documents` | List uploaded filenames, sizes, and file types |
+| `GET` | `/metadata-values` | Fetch list of unique sources and extensions in database |
+| `POST` | `/upload` | Upload PDF, DOCX, or TXT file (Multipart Form Data) |
+| `POST` | `/query` | Ask question with history and filters (JSON body) |
+| `POST` | `/query-stream` | Ask question and stream back tokens and sources (SSE) |
+| `DELETE` | `/clear` | Purge all document vectors, parent stores, and uploads |
+
+---
+
+## 📖 Project Structure
+
+```
+RAG Q&A System/
+│
+├── backend/
+│   ├── main.py                 # FastAPI application, HTTP endpoints
+│   ├── rag_engine.py           # Orchestrator (Upload and Query flows)
+│   ├── document_processor.py   # Document loading & recursive/semantic/hierarchical splits
+│   ├── vector_store.py         # ChromaDB, BM25, Hybrid RRF, Parent resolution
+│   ├── bm25.py                 # Tokenizer and custom BM25 fit/search implementation
+│   ├── llm_handler.py          # Groq client, prompt construction, HyDE, LitM re-ordering
+│   ├── reranker.py             # MS-MARCO Cross-Encoder scoring & sigmoid normalizer
+│   ├── config.py               # Pydantic Settings loaders
+│   └── data/
+│       ├── uploads/            # Temporary storage of parsed files
+│       ├── chromadb/           # ChromaDB database files
+│       └── parent_store.json   # Parent chunks metadata store (Hierarchical strategy)
+│
+├── frontend/
+│   └── app.py                  # Optimized Streamlit UI (caching, SSE streams, glassmorphic layout)
+│
+├── test_system.py              # System configuration, connection, and diagnostic tests
+├── requirements.txt            # System dependencies
+└── README.md                   # ← Root README (You are here)
+```
+
+---
+
+## 🙏 Credits & Libraries
+
+- **LLM Engine**: [Groq API](https://groq.com) for LPU-accelerated Llama 3.3 inference.
+- **Embeddings & Reranking**: [Sentence-Transformers](https://www.sbert.net) (`all-MiniLM-L6-v2` / `ms-marco-MiniLM-L-6-v2`).
+- **Vector Storage**: [ChromaDB](https://www.trychroma.com) for persistent, localized semantic vectors.
+- **REST Framework**: [FastAPI](https://fastapi.tiangolo.com) for async ASGI endpoints and Pydantic validation.
+- **Web UI**: [Streamlit](https://streamlit.io) for rapid Python UI rendering.

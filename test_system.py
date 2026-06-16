@@ -9,6 +9,15 @@ Usage: python test_system.py
 import sys
 import os
 
+# Reconfigure stdout/stderr to support UTF-8 emojis on Windows terminal outputs
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
+
 def test_imports():
     """Test if all required packages are installed"""
     print("\n" + "="*50)

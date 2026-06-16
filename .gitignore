@@ -72,6 +72,7 @@ Thumbs.db
 
 #Personal Exclusions
 Documentation/
+test_files/
 GITHUB_GUIDE.md
 QUICK_COMMANDS.md
 TEST_QUESTIONS.md
