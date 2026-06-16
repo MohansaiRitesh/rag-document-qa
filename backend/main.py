@@ -12,7 +12,7 @@ API Documentation will be available at: http://localhost:8000/docs
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 from pathlib import Path
@@ -41,7 +41,7 @@ app.add_middleware(
 # Load settings
 settings = get_settings()
 
-# Initialize RAG Engine (singleton)
+# Initialize RAG Engine
 rag_engine = None
 
 
@@ -74,9 +74,12 @@ class Message(BaseModel):
     content: str
 
 class QueryRequest(BaseModel):
-    """Model for question queries with history"""
+    """Model for question queries with history and metadata filters"""
     question: str
     history: Optional[List[Message]] = []
+    filters: Optional[Dict] = None
+    use_hyde: Optional[bool] = None
+    use_litm_packing: Optional[bool] = None
     
     class Config:
         json_schema_extra = {
@@ -85,7 +88,10 @@ class QueryRequest(BaseModel):
                 "history": [
                     {"role": "user", "content": "Who founded TechVision?"},
                     {"role": "assistant", "content": "TechVision was founded by Dr. Sarah Chen and Michael Rodriguez."}
-                ]
+                ],
+                "filters": {
+                    "file_type": "pdf"
+                }
             }
         }
 
@@ -100,10 +106,7 @@ class QueryResponse(BaseModel):
     message: Optional[str] = None
 
 
-# ============================================
 # API ENDPOINTS
-# ============================================
-
 @app.get("/")
 async def root():
     """
@@ -149,13 +152,40 @@ async def get_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/metadata-values")
+async def get_metadata_values():
+    """
+    Get all unique sources and file types in the DB for filter options
+    """
+    try:
+        results = rag_engine.vector_store.collection.get()
+        metadatas = results.get("metadatas", []) or []
+        
+        sources = sorted(list(set(m.get("source") for m in metadatas if m.get("source"))))
+        file_types = sorted(list(set(m.get("file_type") for m in metadatas if m.get("file_type"))))
+        
+        return {
+            "success": True,
+            "sources": sources,
+            "file_types": file_types
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/upload")
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(
+    file: UploadFile = File(...),
+    chunking_strategy: Optional[str] = Form("recursive"),
+    semantic_threshold_alpha: Optional[float] = Form(1.0)
+):
     """
     Upload a document for indexing
     
     Args:
         file: Document file (PDF, DOCX, TXT)
+        chunking_strategy: Chunking algorithm to use (recursive or semantic)
+        semantic_threshold_alpha: Scaling factor for standard deviation threshold
         
     Returns:
         Upload status and statistics
@@ -185,7 +215,9 @@ async def upload_document(file: UploadFile = File(...)):
         # Process document
         result = rag_engine.upload_document(
             file_path=str(temp_file_path),
-            original_filename=file.filename
+            original_filename=file.filename,
+            chunking_strategy=chunking_strategy,
+            semantic_threshold_alpha=semantic_threshold_alpha
         )
         
         if result["success"]:
@@ -217,14 +249,51 @@ async def query_documents(request: QueryRequest):
         if not request.question or not request.question.strip():
             raise HTTPException(status_code=400, detail="Question cannot be empty")
         
-        # Process query with history
+        # Process query with history, filters, and toggles
         history_list = [msg.model_dump() for msg in request.history] if request.history else []
-        result = rag_engine.query(request.question, history_list)
+        result = rag_engine.query(
+            question=request.question,
+            history=history_list,
+            filters=request.filters,
+            use_hyde=request.use_hyde,
+            use_litm_packing=request.use_litm_packing
+        )
         
         return result
         
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/query-stream")
+async def query_documents_stream(request: QueryRequest):
+    """
+    Ask a question about uploaded documents and stream response tokens
+    
+    Args:
+        request: Query request with question
+        
+    Returns:
+        Server-Sent Events event-stream yielding sources and tokens
+    """
+    try:
+        if not request.question or not request.question.strip():
+            raise HTTPException(status_code=400, detail="Question cannot be empty")
+            
+        history_list = [msg.model_dump() for msg in request.history] if request.history else []
+        
+        generator = rag_engine.query_stream(
+            question=request.question,
+            history=history_list,
+            filters=request.filters,
+            use_hyde=request.use_hyde,
+            use_litm_packing=request.use_litm_packing
+        )
+        
+        return StreamingResponse(generator, media_type="text/event-stream")
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
