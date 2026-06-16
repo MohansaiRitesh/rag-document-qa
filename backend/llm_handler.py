@@ -12,7 +12,7 @@ Key Concepts:
 - Temperature: Controls randomness (0 = deterministic, 1 = creative)
 """
 
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Generator
 from groq import Groq
 import json
 
@@ -48,7 +48,6 @@ class LLMHandler:
     def create_system_prompt(self) -> str:
         """
         Create system prompt for the LLM
-        
         This defines how the LLM should behave
         """
         return """You are a helpful AI assistant that answers questions based on the provided context.
@@ -136,12 +135,46 @@ Standalone Search Query:"""
         except Exception as e:
             print(f"[WARNING] Query condensation failed: {str(e)}. Using original query.")
             return query
-    
+            
+    def generate_hypothetical_document(self, query: str) -> str:
+        """
+        Generate a hypothetical document (answer) for the query.
+        This is used for HyDE (Hypothetical Document Embeddings) retrieval.
+        """
+        system_prompt = (
+            "You are an expert technical writer and research assistant. "
+            "Given a query, write a paragraph that directly and comprehensively answers the query. "
+            "The paragraph should be written in a professional, declarative, and descriptive textbook or documentation style. "
+            "Do NOT include any introduction, greetings, explanations, formatting markers (like Markdown titles), "
+            "or meta-commentary. Write ONLY the hypothetical factual-sounding answer text itself."
+        )
+        
+        user_message = f"Query: {query}\nHypothetical Answer Paragraph:"
+        
+        try:
+            print(f"[INFO] Generating hypothetical document (HyDE) for query: '{query}'...")
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.3,  # Slight variation allowed to produce descriptive prose
+                max_tokens=500
+            )
+            hypothetical_doc = response.choices[0].message.content.strip()
+            print(f"[SUCCESS] HyDE document generated (length: {len(hypothetical_doc)} chars)")
+            return hypothetical_doc
+        except Exception as e:
+            print(f"[WARNING] HyDE generation failed: {str(e)}. Using original query.")
+            return query
+            
     def generate_response(
         self,
         query: str,
         retrieved_chunks: List[Tuple[str, Dict, float]],
-        history: List[Dict[str, str]] = None
+        history: List[Dict[str, str]] = None,
+        use_litm_packing: bool = True
     ) -> Dict:
         """
         Generate response using retrieved context and conversation history
@@ -150,6 +183,7 @@ Standalone Search Query:"""
             query: User's question
             retrieved_chunks: Retrieved document chunks
             history: Optional conversation history
+            use_litm_packing: If True, re-orders chunks using Lost-in-the-Middle context packing
             
         Returns:
             Dictionary with answer and metadata
@@ -161,6 +195,21 @@ Standalone Search Query:"""
                 "context_used": False
             }
         
+        # Apply Lost-in-the-Middle context packing if active and there are at least 3 chunks
+        if use_litm_packing and len(retrieved_chunks) > 2:
+            reordered = [None] * len(retrieved_chunks)
+            left = 0
+            right = len(retrieved_chunks) - 1
+            for i, chunk in enumerate(retrieved_chunks):
+                if i % 2 == 0:
+                    reordered[left] = chunk
+                    left += 1
+                else:
+                    reordered[right] = chunk
+                    right -= 1
+            retrieved_chunks = reordered
+            print(f"[INFO] Applied Lost-in-the-Middle context packing to {len(retrieved_chunks)} chunks")
+            
         # Format context
         context = self.format_context(retrieved_chunks)
         
@@ -223,6 +272,79 @@ Please provide a detailed answer based on the context above. Remember to cite yo
                 "context_used": False,
                 "error": str(e)
             }
+            
+    def generate_response_stream(
+        self,
+        query: str,
+        retrieved_chunks: List[Tuple[str, Dict, float]],
+        history: List[Dict[str, str]] = None,
+        use_litm_packing: bool = True
+    ) -> Generator[str, None, None]:
+        """
+        Generate response tokens dynamically from Groq stream
+        
+        Yields:
+            Token strings
+        """
+        if not retrieved_chunks:
+            yield ""
+            return
+            
+        # Apply Lost-in-the-Middle context packing if active and there are at least 3 chunks
+        if use_litm_packing and len(retrieved_chunks) > 2:
+            reordered = [None] * len(retrieved_chunks)
+            left = 0
+            right = len(retrieved_chunks) - 1
+            for i, chunk in enumerate(retrieved_chunks):
+                if i % 2 == 0:
+                    reordered[left] = chunk
+                    left += 1
+                else:
+                    reordered[right] = chunk
+                    right -= 1
+            retrieved_chunks = reordered
+            print(f"[INFO] Applied Lost-in-the-Middle context packing to {len(retrieved_chunks)} chunks (Stream)")
+            
+        # Format context
+        context = self.format_context(retrieved_chunks)
+        
+        # Create user message with context
+        user_message = f"""Context Information:
+{context}
+
+Question: {query}
+
+Please provide a detailed answer based on the context above. Remember to cite your sources."""
+        
+        # Construct chat messages array
+        messages = [{"role": "system", "content": self.create_system_prompt()}]
+        
+        # Append history if available
+        if history:
+            for msg in history:
+                role = msg.get("role")
+                if role in ["user", "assistant"]:
+                    messages.append({"role": role, "content": msg.get("content")})
+                    
+        # Append the current query with context
+        messages.append({"role": "user", "content": user_message})
+        
+        # Call Groq with stream=True
+        try:
+            response_stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=1024,
+                top_p=1,
+                stream=True
+            )
+            for chunk in response_stream:
+                token = chunk.choices[0].delta.content
+                if token:
+                    yield token
+        except Exception as e:
+            raise Exception(f"LLM Generation stream failed: {str(e)}")
     
     def test_connection(self) -> bool:
         """

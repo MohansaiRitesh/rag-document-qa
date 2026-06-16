@@ -9,9 +9,10 @@ This is the orchestrator that brings everything together:
 This is the main "brain" of your RAG system.
 """
 
-from typing import List, Dict
+from typing import List, Dict, Generator
 from pathlib import Path
 import shutil
+import json
 
 from document_processor import DocumentProcessor
 from vector_store import VectorStore
@@ -36,7 +37,11 @@ class RAGEngine:
         # Initialize components
         self.document_processor = DocumentProcessor(
             chunk_size=self.settings.chunk_size,
-            chunk_overlap=self.settings.chunk_overlap
+            chunk_overlap=self.settings.chunk_overlap,
+            chunking_strategy=self.settings.chunking_strategy,
+            semantic_threshold_alpha=self.settings.semantic_threshold_alpha,
+            semantic_max_chunk_size=self.settings.semantic_max_chunk_size,
+            embedding_model_name=self.settings.embedding_model
         )
         
         self.vector_store = VectorStore(
@@ -56,7 +61,13 @@ class RAGEngine:
         
         print("[INFO] RAG Engine ready!")
     
-    def upload_document(self, file_path: str, original_filename: str = None) -> Dict:
+    def upload_document(
+        self, 
+        file_path: str, 
+        original_filename: str = None,
+        chunking_strategy: str = None,
+        semantic_threshold_alpha: float = None
+    ) -> Dict:
         """
         Upload and process a document
         
@@ -66,6 +77,8 @@ class RAGEngine:
         Args:
             file_path: Path to the uploaded file
             original_filename: Original name of the file
+            chunking_strategy: Optional chunking strategy override
+            semantic_threshold_alpha: Optional threshold coefficient override
             
         Returns:
             Dictionary with upload status
@@ -73,10 +86,15 @@ class RAGEngine:
         try:
             print(f"\n{'='*50}")
             print(f"[INFO] Processing document: {original_filename or file_path}")
+            print(f"[INFO] Chunking Strategy: {chunking_strategy or self.settings.chunking_strategy}")
             print(f"{'='*50}")
             
             # Step 1: Process document (load + chunk)
-            chunks = self.document_processor.process_document(file_path)
+            chunks = self.document_processor.process_document(
+                file_path,
+                chunking_strategy=chunking_strategy,
+                semantic_threshold_alpha=semantic_threshold_alpha
+            )
             
             if not chunks:
                 return {
@@ -85,7 +103,13 @@ class RAGEngine:
                 }
             
             # Step 2: Add to vector store (embed + store)
-            self.vector_store.add_documents(chunks)
+            if isinstance(chunks, tuple):
+                child_docs, parent_mappings = chunks
+                self.vector_store.add_documents(child_docs, parent_mappings=parent_mappings)
+                chunks_created = len(child_docs)
+            else:
+                self.vector_store.add_documents(chunks)
+                chunks_created = len(chunks)
             
             # Get collection stats
             stats = self.vector_store.get_collection_stats()
@@ -93,7 +117,7 @@ class RAGEngine:
             return {
                 "success": True,
                 "message": f"Document processed successfully",
-                "chunks_created": len(chunks),
+                "chunks_created": chunks_created,
                 "total_documents_in_db": stats["total_documents"],
                 "filename": original_filename or Path(file_path).name
             }
@@ -105,16 +129,26 @@ class RAGEngine:
                 "message": f"Error: {str(e)}"
             }
     
-    def query(self, question: str, history: List[Dict[str, str]] = None) -> Dict:
+    def query(
+        self, 
+        question: str, 
+        history: List[Dict[str, str]] = None, 
+        filters: Dict = None,
+        use_hyde: bool = None,
+        use_litm_packing: bool = None
+    ) -> Dict:
         """
-        Answer a question using RAG and conversation history
+        Answer a question using RAG, conversation history, and metadata filters
         
         This is the QUERY phase:
-        Question + History → Condense → Retrieve → Generate → Answer
+        Question + History → Condense → (HyDE Generation) → Retrieve → Generate → Answer
         
         Args:
             question: User's question
             history: List of previous chat messages
+            filters: Optional dictionary containing metadata query filters
+            use_hyde: Optional boolean override to enable/disable HyDE query expansion.
+                      If None, falls back to the default settings value.
             
         Returns:
             Dictionary with answer and metadata
@@ -122,16 +156,28 @@ class RAGEngine:
         try:
             print(f"\n{'='*50}")
             print(f"[INFO] Question: {question}")
+            if filters:
+                print(f"[INFO] Active Filters: {filters}")
             print(f"{'='*50}")
             
             # Step 1: Condense the query if there is conversation history
             condensed_query = self.llm_handler.condense_query(question, history)
             
+            # Determine if HyDE should be used
+            active_use_hyde = use_hyde if use_hyde is not None else self.settings.use_hyde
+            
+            semantic_query = None
+            if active_use_hyde:
+                # Generate hypothetical document for semantic similarity lookup
+                semantic_query = self.llm_handler.generate_hypothetical_document(condensed_query)
+            
             # Stage 1 Retrieval: Retrieve candidate chunks using Hybrid Search (BM25 + Semantic)
             print(f"[INFO] Stage 1 Retrieval: Fetching top {self.settings.rerank_top_n} candidates...")
             candidate_chunks = self.vector_store.hybrid_search(
                 query=condensed_query,
-                k=self.settings.rerank_top_n
+                k=self.settings.rerank_top_n,
+                where=filters,
+                semantic_query=semantic_query
             )
             
             if not candidate_chunks:
@@ -151,12 +197,16 @@ class RAGEngine:
             
             print(f"[INFO] Stage 2 Re-ranking: Selected top {len(retrieved_chunks)} chunks")
             
+            # Determine if LitM context packing should be used
+            active_use_litm = use_litm_packing if use_litm_packing is not None else self.settings.use_litm_packing
+            
             # Step 2: Generate response using LLM (passing original query and history)
             print("[INFO] Generating response...")
             result = self.llm_handler.generate_response(
                 query=question, 
                 retrieved_chunks=retrieved_chunks,
-                history=history
+                history=history,
+                use_litm_packing=active_use_litm
             )
             
             return {
@@ -172,6 +222,112 @@ class RAGEngine:
                 "message": f"Error: {str(e)}",
                 "question": question
             }
+            
+    def query_stream(
+        self, 
+        question: str, 
+        history: List[Dict[str, str]] = None, 
+        filters: Dict = None,
+        use_hyde: bool = None,
+        use_litm_packing: bool = None
+    ) -> Generator[str, None, None]:
+        """
+        Answer a question using RAG, yielding sources first, then tokens.
+        
+        Yields:
+            JSON strings representing sources and tokens.
+        """
+        try:
+            print(f"\n{'='*50}")
+            print(f"[INFO] Streaming Question: {question}")
+            if filters:
+                print(f"[INFO] Active Filters: {filters}")
+            print(f"{'='*50}")
+            
+            # Step 1: Condense the query if there is conversation history
+            condensed_query = self.llm_handler.condense_query(question, history)
+            
+            # Determine if HyDE should be used
+            active_use_hyde = use_hyde if use_hyde is not None else self.settings.use_hyde
+            
+            semantic_query = None
+            if active_use_hyde:
+                # Generate hypothetical document for semantic similarity lookup
+                semantic_query = self.llm_handler.generate_hypothetical_document(condensed_query)
+            
+            # Stage 1 Retrieval: Retrieve candidate chunks using Hybrid Search (BM25 + Semantic)
+            print(f"[INFO] Stage 1 Retrieval: Fetching top {self.settings.rerank_top_n} candidates...")
+            candidate_chunks = self.vector_store.hybrid_search(
+                query=condensed_query,
+                k=self.settings.rerank_top_n,
+                where=filters,
+                semantic_query=semantic_query
+            )
+            
+            if not candidate_chunks:
+                yield json.dumps({
+                    "type": "sources",
+                    "sources": []
+                }) + "\n"
+                yield json.dumps({
+                    "type": "token",
+                    "token": "No relevant information found in the uploaded documents."
+                }) + "\n"
+                return
+            
+            # Stage 2 Re-ranking: Re-score and sort candidates using Cross-Encoder
+            retrieved_chunks = self.reranker.rerank(
+                query=condensed_query,
+                chunks=candidate_chunks,
+                top_k=self.settings.top_k_results
+            )
+            
+            print(f"[INFO] Stage 2 Re-ranking: Selected top {len(retrieved_chunks)} chunks (Stream)")
+            
+            # Format sources metadata and yield it first
+            sources = []
+            for text, metadata, distance in retrieved_chunks:
+                relevance_score = 1.0 - distance
+                source_name = metadata.get('source', 'Unknown')
+                chunk_id = metadata.get('chunk_id', 'N/A')
+                if metadata.get('is_parent'):
+                    chunk_id = f"Parent {chunk_id}"
+                
+                sources.append({
+                    "source": source_name,
+                    "chunk_id": chunk_id,
+                    "preview": text[:200] + "..." if len(text) > 200 else text,
+                    "relevance_score": max(0.0, min(1.0, relevance_score))
+                })
+                
+            yield json.dumps({
+                "type": "sources",
+                "sources": sources
+            }) + "\n"
+            
+            # Step 2: Generate response stream using LLM
+            print("[INFO] Initiating response stream...")
+            active_use_litm = use_litm_packing if use_litm_packing is not None else self.settings.use_litm_packing
+            
+            token_stream = self.llm_handler.generate_response_stream(
+                query=question,
+                retrieved_chunks=retrieved_chunks,
+                history=history,
+                use_litm_packing=active_use_litm
+            )
+            
+            for token in token_stream:
+                yield json.dumps({
+                    "type": "token",
+                    "token": token
+                }) + "\n"
+                
+        except Exception as e:
+            print(f"[ERROR] Error in query stream: {str(e)}")
+            yield json.dumps({
+                "type": "error",
+                "message": f"Error: {str(e)}"
+            }) + "\n"
     
     def get_stats(self) -> Dict:
         """Get current system statistics"""

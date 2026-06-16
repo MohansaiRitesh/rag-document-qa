@@ -32,13 +32,22 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     
     # Model Configuration
-    llm_model: str = "llama-3.3-70b-versatile"  # Latest Llama 3.3 model (Dec 2024)
+    llm_model: str = "llama-3.3-70b-versatile"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     
     # RAG Parameters
     chunk_size: int = 1000  # Characters per chunk
     chunk_overlap: int = 200  # Overlap between chunks for context
+    chunking_strategy: str = "recursive"  # "recursive", "semantic", or "hierarchical"
+    semantic_threshold_alpha: float = 1.0  # Threshold calculation std dev scale
+    semantic_max_chunk_size: int = 1500  # Max character fallback limit
+    parent_chunk_size: int = 1500  # Parent chunk character size
+    parent_chunk_overlap: int = 200  # Parent chunk overlap
+    child_chunk_size: int = 300  # Child chunk character size
+    child_chunk_overlap: int = 50  # Child chunk overlap
     top_k_results: int = 4  # Number of relevant chunks to retrieve
+    use_hyde: bool = True  # Enable HyDE (Hypothetical Document Embeddings) Query Expansion
+    use_litm_packing: bool = True  # Enable Lost-in-the-Middle prompt context packing
     
     # Re-ranking Parameters
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
