@@ -18,11 +18,16 @@ import re
 import numpy as np
 import time
 import uuid
+import os
+import io
+import base64
 import PyPDF2
+import fitz  # PyMuPDF
 from docx import Document
 from sentence_transformers import SentenceTransformer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document as LangchainDocument
+from groq import Groq
 
 
 class DocumentProcessor:
@@ -41,7 +46,8 @@ class DocumentProcessor:
         parent_chunk_size: int = 1500,
         parent_chunk_overlap: int = 200,
         child_chunk_size: int = 300,
-        child_chunk_overlap: int = 50
+        child_chunk_overlap: int = 50,
+        api_key: str = None
     ):
         """
         Initialize the processor with chunking parameters
@@ -57,6 +63,7 @@ class DocumentProcessor:
             parent_chunk_overlap: Characters overlap between parent chunks
             child_chunk_size: Characters per child chunk (hierarchical)
             child_chunk_overlap: Characters overlap between child chunks
+            api_key: Groq API key for vision captioning
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
@@ -69,6 +76,8 @@ class DocumentProcessor:
         self.parent_chunk_overlap = parent_chunk_overlap
         self.child_chunk_size = child_chunk_size
         self.child_chunk_overlap = child_chunk_overlap
+        
+        self.groq_client = Groq(api_key=api_key) if api_key else None
         
         # Recursive splitter (standard)
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -142,6 +151,110 @@ class DocumentProcessor:
             return text
         except Exception as e:
             raise Exception(f"Error reading PDF: {str(e)}")
+
+    def caption_image(self, image_bytes: bytes) -> str:
+        """Call Groq to caption the image"""
+        if not self.groq_client:
+            raise ValueError("Groq client not initialized in DocumentProcessor")
+            
+        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        
+        response = self.groq_client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Identify if this image is a chart, graph, table, or general illustration. "
+                                "Describe it in detail for a RAG search engine: transcribe any visible text, "
+                                "describe data trends, labels, or relationships, and summarize the key information shown. "
+                                "Keep the description factual and comprehensive."
+                            )
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            temperature=0.2,
+            max_tokens=512
+        )
+        return response.choices[0].message.content.strip()
+
+    def extract_and_caption_pdf_images(self, file_path: str, metadata: Dict) -> List[LangchainDocument]:
+        """Extract all embedded images in a PDF and create descriptive chunk documents for them"""
+        extracted_docs = []
+        try:
+            doc = fitz.open(file_path)
+        except Exception as e:
+            print(f"[WARNING] Could not open PDF with PyMuPDF for image extraction: {str(e)}")
+            return []
+
+        from config import get_settings
+        settings = get_settings()
+        extracted_images_dir = settings.extracted_images_dir
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            try:
+                image_list = page.get_images(full=True)
+            except Exception as e:
+                print(f"[WARNING] Could not get page {page_num+1} images: {str(e)}")
+                continue
+
+            for img_idx, img in enumerate(image_list):
+                try:
+                    xref = img[0]
+                    base_image = doc.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+
+                    # Skip tiny decorative/spacer icons under 2KB
+                    if len(image_bytes) < 2048:
+                        continue
+
+                    # Generate unique name
+                    image_uuid = str(uuid.uuid4())
+                    image_filename = f"{image_uuid}.{image_ext}"
+                    save_path = os.path.join(extracted_images_dir, image_filename)
+
+                    with open(save_path, "wb") as f:
+                        f.write(image_bytes)
+
+                    # Call Groq to caption
+                    if self.groq_client:
+                        try:
+                            caption = self.caption_image(image_bytes)
+                            print(f"[INFO] Generated caption for visual element: '{caption[:80]}...'")
+                        except Exception as caption_err:
+                            print(f"[WARNING] Image captioning failed: {str(caption_err)}")
+                            caption = "Image extracted but VLM captioning failed."
+                    else:
+                        caption = "Image extracted but Groq API key is not configured."
+
+                    doc_obj = LangchainDocument(
+                        page_content=f"[Visual Content Description]: {caption}",
+                        metadata={
+                            **metadata,
+                            "chunk_id": f"img_{page_num+1}_{img_idx}",
+                            "is_image": True,
+                            "image_path": image_filename,
+                            "page_number": page_num + 1
+                        }
+                    )
+                    extracted_docs.append(doc_obj)
+                except Exception as img_err:
+                    print(f"[WARNING] Skipping image extraction on page {page_num+1} index {img_idx}: {str(img_err)}")
+                    continue
+
+        return extracted_docs
     
     def load_docx(self, file_path: str) -> str:
         """
@@ -406,7 +519,7 @@ class DocumentProcessor:
         semantic_threshold_alpha: float = None
     ) -> Union[List[LangchainDocument], Tuple[List[LangchainDocument], Dict[str, Dict]]]:
         """
-        Complete pipeline: Load → Chunk → Add Metadata
+        Complete pipeline: Load → Chunk → Add Metadata (including visual content extraction)
         
         Args:
             file_path: Path to document
@@ -421,8 +534,8 @@ class DocumentProcessor:
         
         # Extract filename for metadata
         filename = Path(file_path).name
-        
         path = Path(file_path)
+        
         # Create metadata
         metadata = {
             "source": filename,
@@ -431,7 +544,8 @@ class DocumentProcessor:
             "file_size": path.stat().st_size if path.exists() else 0,
             "uploaded_at": time.time()
         }
-        # Create chunks
+        
+        # Create text chunks
         result = self.create_chunks(
             text, 
             metadata, 
@@ -439,9 +553,24 @@ class DocumentProcessor:
             semantic_threshold_alpha=semantic_threshold_alpha
         )
         
+        # If it is a PDF, extract and caption images
+        if path.suffix.lower() == ".pdf":
+            print(f"[INFO] Scanning {filename} for embedded visual elements...")
+            visual_docs = self.extract_and_caption_pdf_images(file_path, metadata)
+            if visual_docs:
+                print(f"[SUCCESS] Extracted and captioned {len(visual_docs)} visual elements from {filename}")
+                if isinstance(result, tuple):
+                    # Hierarchical mode: append to child chunks list
+                    result[0].extend(visual_docs)
+                else:
+                    # Recursive/Semantic mode: extend chunks list
+                    result.extend(visual_docs)
+            else:
+                print(f"[INFO] No visual elements extracted from {filename}")
+        
         # Log count of child chunks created
         child_count = len(result[0]) if isinstance(result, tuple) else len(result)
-        print(f"[SUCCESS] Processed {filename}: {child_count} child chunks created")
+        print(f"[SUCCESS] Processed {filename}: {child_count} total chunks (including visual chunks) created")
         return result
 
 

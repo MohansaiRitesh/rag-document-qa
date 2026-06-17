@@ -41,7 +41,8 @@ class RAGEngine:
             chunking_strategy=self.settings.chunking_strategy,
             semantic_threshold_alpha=self.settings.semantic_threshold_alpha,
             semantic_max_chunk_size=self.settings.semantic_max_chunk_size,
-            embedding_model_name=self.settings.embedding_model
+            embedding_model_name=self.settings.embedding_model,
+            api_key=self.settings.groq_api_key
         )
         
         self.vector_store = VectorStore(
@@ -297,7 +298,9 @@ class RAGEngine:
                     "source": source_name,
                     "chunk_id": chunk_id,
                     "preview": text[:200] + "..." if len(text) > 200 else text,
-                    "relevance_score": max(0.0, min(1.0, relevance_score))
+                    "relevance_score": max(0.0, min(1.0, relevance_score)),
+                    "is_image": metadata.get("is_image", False),
+                    "image_path": metadata.get("image_path")
                 })
                 
             yield json.dumps({
