@@ -255,7 +255,9 @@ Please provide a detailed answer based on the context above. Remember to cite yo
                     "source": metadata.get('source', 'Unknown'),
                     "chunk_id": metadata.get('chunk_id', 'N/A'),
                     "relevance_score": round(max(0.0, min(1.0, 1.0 - distance)), 3),  # Convert distance to similarity
-                    "preview": text[:200] + "..." if len(text) > 200 else text
+                    "preview": text[:200] + "..." if len(text) > 200 else text,
+                    "is_image": metadata.get("is_image", False),
+                    "image_path": metadata.get("image_path")
                 })
             
             return {

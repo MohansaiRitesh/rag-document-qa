@@ -740,9 +740,9 @@ def render_sources_section(sources: List[Dict], expanded: bool = False):
             <div class="source-card">
                 <div class="source-card-header">
                     <div class="source-file-info">
-                        <span class="source-icon">📄</span>
+                        <span class="source-icon">{"🖼️" if source.get("is_image") else "📄"}</span>
                         <span class="source-filename">{source.get('source', 'Unknown')}</span>
-                        <span class="source-chunk-badge">Chunk #{source.get('chunk_id', 'N/A')}</span>
+                        <span class="source-chunk-badge">{"Visual Element" if source.get("is_image") else f"Chunk #{source.get('chunk_id', 'N/A')}"}</span>
                     </div>
                     <div class="source-relevance">
                         <span class="relevance-label">Relevance</span>
@@ -758,6 +758,10 @@ def render_sources_section(sources: List[Dict], expanded: bool = False):
             </div>
             '''
             st.markdown(source_html, unsafe_allow_html=True)
+            
+            if source.get("is_image") and source.get("image_path"):
+                image_url = f"{API_URL}/images/{source.get('image_path')}"
+                st.image(image_url, caption=f"Visual Element from {source.get('source')} (Page {source.get('page_number', 'N/A')})", use_column_width=True)
 
 
 # ============================================

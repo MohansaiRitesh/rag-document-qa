@@ -13,6 +13,7 @@ API Documentation will be available at: http://localhost:8000/docs
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 from pathlib import Path
@@ -40,6 +41,9 @@ app.add_middleware(
 
 # Load settings
 settings = get_settings()
+
+# Mount static files to serve extracted images
+app.mount("/images", StaticFiles(directory=settings.extracted_images_dir), name="images")
 
 # Initialize RAG Engine
 rag_engine = None

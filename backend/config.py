@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     
     # File Upload
     upload_dir: str = str(BASE_DIR / "data" / "uploads")
+    extracted_images_dir: str = str(BASE_DIR / "data" / "extracted_images")
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     allowed_extensions: set = {".pdf", ".docx", ".txt"}
     
@@ -86,4 +87,5 @@ def setup_directories():
     settings = get_settings()
     os.makedirs(settings.upload_dir, exist_ok=True)
     os.makedirs(settings.vector_db_path, exist_ok=True)
+    os.makedirs(settings.extracted_images_dir, exist_ok=True)
     print("[INFO] Directories initialized")
