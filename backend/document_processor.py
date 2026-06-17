@@ -255,6 +255,73 @@ class DocumentProcessor:
                     continue
 
         return extracted_docs
+
+    def extract_and_caption_docx_images(self, file_path: str, metadata: Dict) -> List[LangchainDocument]:
+        """Extract all embedded images in a DOCX document and create descriptive chunk documents for them"""
+        extracted_docs = []
+        try:
+            doc = Document(file_path)
+        except Exception as e:
+            print(f"[WARNING] Could not open DOCX for image extraction: {str(e)}")
+            return []
+
+        from config import get_settings
+        settings = get_settings()
+        extracted_images_dir = settings.extracted_images_dir
+
+        img_idx = 0
+        for rel in doc.part.rels.values():
+            try:
+                # Check if target part is an ImagePart
+                if rel.target_part.__class__.__name__ == "ImagePart":
+                    image_bytes = rel.target_part._blob
+                    
+                    # Skip tiny decorative/spacer icons under 2KB
+                    if len(image_bytes) < 2048:
+                        continue
+                        
+                    # Extract extension from partname
+                    partname = rel.target_part.partname # e.g. /word/media/image1.png
+                    image_ext = Path(partname).suffix.lower().lstrip(".")
+                    if not image_ext:
+                        image_ext = "png"
+                        
+                    # Generate unique name
+                    image_uuid = str(uuid.uuid4())
+                    image_filename = f"{image_uuid}.{image_ext}"
+                    save_path = os.path.join(extracted_images_dir, image_filename)
+
+                    with open(save_path, "wb") as f:
+                        f.write(image_bytes)
+
+                    # Call Groq to caption
+                    if self.groq_client:
+                        try:
+                            caption = self.caption_image(image_bytes)
+                            print(f"[INFO] Generated caption for visual element in DOCX: '{caption[:80]}...'")
+                        except Exception as caption_err:
+                            print(f"[WARNING] Image captioning failed: {str(caption_err)}")
+                            caption = "Image extracted but VLM captioning failed."
+                    else:
+                        caption = "Image extracted but Groq API key is not configured."
+
+                    doc_obj = LangchainDocument(
+                        page_content=f"[Visual Content Description]: {caption}",
+                        metadata={
+                            **metadata,
+                            "chunk_id": f"img_docx_{img_idx}",
+                            "is_image": True,
+                            "image_path": image_filename,
+                            "page_number": 1
+                        }
+                    )
+                    extracted_docs.append(doc_obj)
+                    img_idx += 1
+            except Exception as img_err:
+                print(f"[WARNING] Skipping DOCX image extraction index {img_idx}: {str(img_err)}")
+                continue
+
+        return extracted_docs
     
     def load_docx(self, file_path: str) -> str:
         """
@@ -553,20 +620,25 @@ class DocumentProcessor:
             semantic_threshold_alpha=semantic_threshold_alpha
         )
         
-        # If it is a PDF, extract and caption images
+        # If it is a PDF or DOCX, extract and caption images
+        visual_docs = []
         if path.suffix.lower() == ".pdf":
-            print(f"[INFO] Scanning {filename} for embedded visual elements...")
+            print(f"[INFO] Scanning {filename} (PDF) for embedded visual elements...")
             visual_docs = self.extract_and_caption_pdf_images(file_path, metadata)
-            if visual_docs:
-                print(f"[SUCCESS] Extracted and captioned {len(visual_docs)} visual elements from {filename}")
-                if isinstance(result, tuple):
-                    # Hierarchical mode: append to child chunks list
-                    result[0].extend(visual_docs)
-                else:
-                    # Recursive/Semantic mode: extend chunks list
-                    result.extend(visual_docs)
+        elif path.suffix.lower() == ".docx":
+            print(f"[INFO] Scanning {filename} (DOCX) for embedded visual elements...")
+            visual_docs = self.extract_and_caption_docx_images(file_path, metadata)
+
+        if visual_docs:
+            print(f"[SUCCESS] Extracted and captioned {len(visual_docs)} visual elements from {filename}")
+            if isinstance(result, tuple):
+                # Hierarchical mode: append to child chunks list
+                result[0].extend(visual_docs)
             else:
-                print(f"[INFO] No visual elements extracted from {filename}")
+                # Recursive/Semantic mode: extend chunks list
+                result.extend(visual_docs)
+        else:
+            print(f"[INFO] No visual elements extracted from {filename}")
         
         # Log count of child chunks created
         child_count = len(result[0]) if isinstance(result, tuple) else len(result)
