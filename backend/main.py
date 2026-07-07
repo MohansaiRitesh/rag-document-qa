@@ -33,7 +33,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Specify frontend URL in production
+    allow_origins=["*"],  # We need to specify frontend URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -358,5 +358,5 @@ if __name__ == "__main__":
         "main:app",
         host=settings.api_host,
         port=settings.api_port,
-        reload=True  # Auto-reload on code changes (development only)
+        reload=True  # Auto-reload on code changes
     )

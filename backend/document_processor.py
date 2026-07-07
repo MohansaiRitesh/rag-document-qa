@@ -6,10 +6,6 @@ This module handles:
 2. Splitting documents into chunks
 3. Extracting metadata
 
-Key Concepts:
-- Chunking: Breaking documents into smaller pieces for better retrieval
-- Overlap: Keeping some text between chunks to maintain context
-- Metadata: Storing source information for citation
 """
 
 from typing import List, Dict, Tuple, Union

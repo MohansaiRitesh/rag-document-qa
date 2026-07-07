@@ -6,10 +6,6 @@ This module manages the vector database (ChromaDB):
 2. Storing embeddings with metadata
 3. Similarity search for retrieval
 
-Key Concepts:
-- Embeddings: Numerical representations of text (vectors)
-- Similarity Search: Finding text chunks similar to a query
-- ChromaDB: Local vector database for storing and searching embeddings
 """
 
 from typing import List, Dict, Tuple

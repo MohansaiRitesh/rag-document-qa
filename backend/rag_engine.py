@@ -6,7 +6,7 @@ This is the orchestrator that brings everything together:
 2. Vector Storage
 3. LLM Generation
 
-This is the main "brain" of your RAG system.
+This is the main "brain" of RAG system.
 """
 
 from typing import List, Dict, Generator

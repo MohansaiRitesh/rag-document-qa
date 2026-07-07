@@ -6,10 +6,6 @@ This module manages interactions with the Language Model:
 2. Generate responses with context
 3. Create citation-aware prompts
 
-Key Concepts:
-- Context Window: The amount of text the LLM can process
-- System Prompt: Instructions for the LLM's behavior
-- Temperature: Controls randomness (0 = deterministic, 1 = creative)
 """
 
 from typing import List, Dict, Tuple, Generator
@@ -52,15 +48,15 @@ class LLMHandler:
         """
         return """You are a helpful AI assistant that answers questions based on the provided context.
 
-CRITICAL INSTRUCTIONS:
-1. ONLY answer using information from the provided context
-2. If the context doesn't contain the answer, say "I cannot answer this question based on the provided documents."
-3. Always cite your sources by mentioning the document name
-4. Be precise and factual - no speculation or assumptions
-5. If you quote directly, use quotation marks and cite the source
-6. Provide clear, well-structured answers
+        CRITICAL INSTRUCTIONS:
+        1. ONLY answer using information from the provided context
+        2. If the context doesn't contain the answer, say "I cannot answer this question based on the provided documents."
+        3. Always cite your sources by mentioning the document name
+        4. Be precise and factual - no speculation or assumptions
+        5. If you quote directly, use quotation marks and cite the source
+        6. Provide clear, well-structured answers
 
-Remember: Your goal is to provide GROUNDED, CITED answers without hallucination."""
+        Remember: Your goal is to provide GROUNDED, CITED answers without hallucination."""
     
     def format_context(
         self, 
@@ -83,9 +79,9 @@ Remember: Your goal is to provide GROUNDED, CITED answers without hallucination.
             
             # Format each chunk with metadata
             context_part = f"""
-[Source {i}: {source}, Chunk {chunk_id}]
-{text}
----"""
+            [Source {i}: {source}, Chunk {chunk_id}]
+            {text}
+            ---"""
             context_parts.append(context_part)
         
         return "\n".join(context_parts)
@@ -113,11 +109,11 @@ Remember: Your goal is to provide GROUNDED, CITED answers without hallucination.
         
         user_message = f"""Given the following conversation history and a follow-up question, rephrase the follow-up question to be a standalone search query. Do NOT answer the question, just output the rephrased query and nothing else.
 
-Conversation History:
-{history_text}
+                    Conversation History:
+                    {history_text}
 
-Follow-up Question: {query}
-Standalone Search Query:"""
+                    Follow-up Question: {query}
+                    Standalone Search Query:"""
 
         try:
             response = self.client.chat.completions.create(
@@ -215,11 +211,11 @@ Standalone Search Query:"""
         
         # Create user message with context (sent as the final user message)
         user_message = f"""Context Information:
-{context}
+        {context}
 
-Question: {query}
+        Question: {query}
 
-Please provide a detailed answer based on the context above. Remember to cite your sources."""
+        Please provide a detailed answer based on the context above. Remember to cite your sources."""
         
         try:
             # Construct chat messages array
@@ -312,11 +308,11 @@ Please provide a detailed answer based on the context above. Remember to cite yo
         
         # Create user message with context
         user_message = f"""Context Information:
-{context}
+        {context}
 
-Question: {query}
+        Question: {query}
 
-Please provide a detailed answer based on the context above. Remember to cite your sources."""
+        Please provide a detailed answer based on the context above. Remember to cite your sources."""
         
         # Construct chat messages array
         messages = [{"role": "system", "content": self.create_system_prompt()}]

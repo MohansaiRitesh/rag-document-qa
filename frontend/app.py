@@ -15,8 +15,10 @@ import json
 from pathlib import Path
 
 
+import os
+
 # Backend API URL
-API_URL = "http://localhost:8000"
+API_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 # Page config
 st.set_page_config(
