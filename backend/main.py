@@ -25,7 +25,7 @@ from rag_engine import RAGEngine
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="RAG Document Q&A API",
+    title="Maester AI API",
     description="Upload documents and ask questions with cited, grounded answers",
     version="1.0.0"
 )
@@ -84,6 +84,7 @@ class QueryRequest(BaseModel):
     filters: Optional[Dict] = None
     use_hyde: Optional[bool] = None
     use_litm_packing: Optional[bool] = None
+    use_agentic_rag: Optional[bool] = False
     
     class Config:
         json_schema_extra = {
@@ -95,7 +96,8 @@ class QueryRequest(BaseModel):
                 ],
                 "filters": {
                     "file_type": "pdf"
-                }
+                },
+                "use_agentic_rag": True
             }
         }
 
@@ -117,7 +119,7 @@ async def root():
     Root endpoint - API information
     """
     return {
-        "message": "RAG Document Q&A API",
+        "message": "Maester AI API",
         "version": "1.0.0",
         "docs": "/docs",
         "health": "/health"
@@ -288,13 +290,22 @@ async def query_documents_stream(request: QueryRequest):
             
         history_list = [msg.model_dump() for msg in request.history] if request.history else []
         
-        generator = rag_engine.query_stream(
-            question=request.question,
-            history=history_list,
-            filters=request.filters,
-            use_hyde=request.use_hyde,
-            use_litm_packing=request.use_litm_packing
-        )
+        if request.use_agentic_rag:
+            generator = rag_engine.query_agentic_stream(
+                question=request.question,
+                history=history_list,
+                filters=request.filters,
+                use_hyde=request.use_hyde,
+                use_litm_packing=request.use_litm_packing
+            )
+        else:
+            generator = rag_engine.query_stream(
+                question=request.question,
+                history=history_list,
+                filters=request.filters,
+                use_hyde=request.use_hyde,
+                use_litm_packing=request.use_litm_packing
+            )
         
         return StreamingResponse(generator, media_type="text/event-stream")
         

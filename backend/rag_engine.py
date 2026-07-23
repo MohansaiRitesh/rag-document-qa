@@ -18,6 +18,7 @@ from document_processor import DocumentProcessor
 from vector_store import VectorStore
 from llm_handler import LLMHandler
 from reranker import Reranker
+from agentic_engine import AgenticEngine
 from config import get_settings
 
 
@@ -58,6 +59,11 @@ class RAGEngine:
         
         self.reranker = Reranker(
             model_name=self.settings.reranker_model
+        )
+        
+        self.agentic_engine = AgenticEngine(
+            vector_store=self.vector_store,
+            llm_handler=self.llm_handler
         )
         
         print("[INFO] RAG Engine ready!")
@@ -331,6 +337,25 @@ class RAGEngine:
                 "type": "error",
                 "message": f"Error: {str(e)}"
             }) + "\n"
+
+    def query_agentic_stream(
+        self,
+        question: str,
+        history: List[Dict[str, str]] = None,
+        filters: Dict = None,
+        use_hyde: bool = None,
+        use_litm_packing: bool = None
+    ) -> Generator[str, None, None]:
+        """
+        Stream agentic query processing yielding thoughts, sources, and tokens via AgenticEngine.
+        """
+        return self.agentic_engine.execute_stream(
+            query=question,
+            filters=filters,
+            use_hyde=use_hyde,
+            use_litm_packing=use_litm_packing,
+            history=history
+        )
     
     def get_stats(self) -> Dict:
         """Get current system statistics"""
