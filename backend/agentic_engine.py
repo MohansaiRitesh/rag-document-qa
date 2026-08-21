@@ -63,7 +63,7 @@ class AgenticEngine:
         
         try:
             response = self.groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": query}
@@ -112,7 +112,7 @@ class AgenticEngine:
         
         try:
             response = self.groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Query: {query}\n\nRetrieved Context:\n{context_str}"}
@@ -157,7 +157,7 @@ class AgenticEngine:
         
         try:
             response = self.groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Original Query: {query}\nFailure Rationale: {rationale}"}
@@ -245,7 +245,7 @@ class AgenticEngine:
         
         try:
             response = self.groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Context:\n{context_str}\n\nAnswer:\n{answer}"}

@@ -156,7 +156,7 @@ class DocumentProcessor:
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
         
         response = self.groq_client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model="openai/gpt-oss-120b",
             messages=[
                 {
                     "role": "user",
