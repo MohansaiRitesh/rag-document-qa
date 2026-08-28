@@ -21,7 +21,7 @@ class LLMHandler:
     def __init__(
         self,
         api_key: str,
-        model: str = "llama-3.1-70b-versatile",
+        model: str = "openai/gpt-oss-120b",
         temperature: float = 0.1
     ):
         """
@@ -374,7 +374,7 @@ if __name__ == "__main__":
     # Initialize handler
     handler = LLMHandler(
         api_key=os.getenv("GROQ_API_KEY"),
-        model="llama-3.3-70b-versatile"
+        model="openai/gpt-oss-120b"
     )
     
     # Test connection

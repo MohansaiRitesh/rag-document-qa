@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     
     # Model Configuration
-    llm_model: str = "llama-3.3-70b-versatile"
+    llm_model: str = "openai/gpt-oss-120b"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     
     # RAG Parameters

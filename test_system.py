@@ -150,7 +150,7 @@ def test_groq_connection():
         
         print("🔄 Testing API call...")
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",  # Updated model
+            model="openai/gpt-oss-120b",  # Updated model
             messages=[{"role": "user", "content": "Say 'test successful'"}],
             max_tokens=10
         )
